@@ -4,6 +4,18 @@ echo serviette > /etc/hostname
 # Allow every user to use DNS resolution                                                                                                                                            
 chmod a+r /etc/resolv.conf
 
+# Configure locales
+aptitude -y install locales
+
+cat > /etc/locale.gen <<EOF 
+de_AT.UTF-8 UTF-8
+de_CH.UTF-8 UTF-8
+de_DE.UTF-8 UTF-8
+en_US.UTF-8 UTF-8
+EOF
+
+locale-gen
+
 # Set up Debian's sources.list
 cat > /etc/apt/sources.list <<EOL
 deb http://ftp.de.debian.org/debian wheezy main contrib non-free
@@ -20,16 +32,6 @@ dpkg-reconfigure openssh-server
 
 # Install basic tools
 aptitude -y install zsh vim less gzip git-core curl python g++ iw wpasupplicant wireless-tools dnsmasq bridge-utils screen tmux mosh ed strace cowsay figlet toilet at  pv mmv iputils-tracepath tre-agrep urlscan urlview autossh elinks irssi-scripts ncftp sc byobu mc tree atop iftop iotop nmap antiword moreutils net-tools whois pwgen
-
-# Configure locales
-cat > /etc/locale.gen <<EOF 
-de_AT.UTF-8 UTF-8
-de_CH.UTF-8 UTF-8
-de_DE.UTF-8 UTF-8
-en_US.UTF-8 UTF-8
-EOF
-
-locale-gen
 
 # Set time zone
 echo "Europe/Berlin" > /etc/timezone
@@ -93,7 +95,7 @@ curl -sL https://deb.nodesource.com/setup | bash -
 aptitude install -y nodejs
 
 # Etherpad-lite installieren
-adduser etherpad --disabled-login --disabled-password
+useradd -m etherpad
 su etherpad -s /bin/bash
 git clone git://github.com/ether/etherpad-lite.git
 cd ~/etherpad-lite
@@ -106,86 +108,7 @@ vim ~/etherpad-lite/settings.json
 
 # admin user anlegen
 
-cat > /etc/init.d/etherpad-lite <<EOF
-#!/bin/sh
-### BEGIN INIT INFO
-# Provides:          etherpad-lite
-# Required-Start:    $local_fs $remote_fs $network $syslog
-# Required-Stop:     $local_fs $remote_fs $network $syslog
-# Default-Start:     2 3 4 5
-# Default-Stop:      0 1 6
-# Short-Description: starts etherpad lite
-# Description:       starts etherpad lite using start-stop-daemon
-### END INIT INFO
-
-PATH="/usr/local/sbin:/usr/local/bin:/sbin:/bin:/usr/sbin:/usr/bin:/opt/node/bin"
-LOGFILE="/var/log/etherpad-lite/etherpad-lite.log"
-EPLITE_DIR="/home/etherpad/etherpad-lite"
-EPLITE_BIN="bin/run.sh"
-USER="etherpad"
-GROUP="etherpad"
-DESC="Etherpad Lite"
-NAME="etherpad-lite"
-
-set -e
-
-. /lib/lsb/init-functions
-
-start() {
-  echo "Starting $DESC... "
-
-    start-stop-daemon --start --chuid "$USER:$GROUP" --background --make-pidfile --pidfile /var/run/$NAME.pid --exec $EPLITE_DIR/$EPLITE_BIN -- $LOGFILE || true
-  echo "done"
-}
-
-# We need this function to ensure the whole process tree will be killed
-killtree() {
-    local _pid=$1
-    local _sig=${2-TERM}
-    for _child in $(ps -o pid --no-headers --ppid ${_pid}); do
-        killtree ${_child} ${_sig}
-    done
-    kill -${_sig} ${_pid}
-}
-
-stop() {
-  echo "Stopping $DESC... "
-  if test -f /var/run/$NAME.pid; then
-    while test -d /proc/$(cat /var/run/$NAME.pid); do
-      killtree $(cat /var/run/$NAME.pid) 15
-      sleep 0.5
-    done
-    rm /var/run/$NAME.pid
-  fi
-  echo "done"
-}
-
-status() {
-  status_of_proc -p /var/run/$NAME.pid "" "etherpad-lite" && exit 0 || exit $?
-}
-
-case "$1" in
-  start)
-      start
-      ;;
-  stop)
-    stop
-      ;;
-  restart)
-      stop
-      start
-      ;;
-  status)
-      status
-      ;;
-  *)
-      echo "Usage: $NAME {start|stop|restart|status}" >&2
-      exit 1
-      ;;
-esac
-
-exit 0
-EOF
+wget https://github.com/serviette/serviette/raw/master/etherpad-lite.init -O /etc/init.d/etherpad-lite 
 
 chmod +x /etc/init.d/etherpad-lite
 mkdir /var/log/etherpad-lite
