@@ -1,4 +1,4 @@
-!/bin/sh
+#!/bin/sh
 ### BEGIN INIT INFO
 # Provides:          etherpad-lite
 # Required-Start:    $local_fs $remote_fs $network $syslog
