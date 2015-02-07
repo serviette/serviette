@@ -117,7 +117,7 @@ update-rc.d etherpad-lite defaults
 service etherpad-lite start
 
 == XMPP Server ==
-aptitude install prosody
+aptitude -y install prosody
 
 cat > /etc/prosody/conf.d/serviette.cfg.lua <<EOF
 VirtualHost "serviette.lan"
@@ -130,22 +130,22 @@ wget https://raw.githubusercontent.com/augustf/prosody-mod_auth_pam/master/mod_a
 
 sed -i 's/--"groups"/"groups"/' /etc/prosody/prosody.cfg.lua 
 
+service prosody restart
 
 == PGP/GPG Key Server ==
-aptitude install sks
+aptitude -y install sks
 sks build
 chown -Rc debian-sks:debian-sks /var/lib/sks/DB
 echo '# Empty - Do not communicate with other keyservers.' >/etc/sks/mailsync
 echo '# Empty - Do not communicate with other keyservers.' >/etc/sks/membership
 echo 'initstart=yes' >/etc/default/sks
-/etc/init.d/sks start
+service sks start
 
 == Webserver ==
 
-aptitude install nginx-light fcgiwrap php5-cgi
+aptitude -y install nginx-light fcgiwrap php5-cgi
 
-
-/etc/init.d/nginx restart
+service nginx restart
 
 mkdir /etc/skel/public_html
 
@@ -155,22 +155,21 @@ www-data ALL=(root) NOPASSWD: /usr/sbin/useradd"
 EOF
 
 
-
 == Ikiwiki ==
-aptitude install ikiwiki
+aptitude -y install ikiwiki
 
 
 == IRC Server ==
-aptitude install ngircd
+aptitude -y install ngircd
 
 sed -i 's/Name = irc.example.net/Name = irc.serviette.lan/' /etc/ngircd/ngircd.conf
 
-/etc/init.d/ngircd restart
+service ngircd restart
+
 
 == HostAPd ==
-aptitude install hostapd
-sed -i 's/#DAEMON_CONF=/DAEMON_CONF="\/etc\/hostapd\/hostapd.conf"/' /etc/default/hostapd
-
+aptitude -y install hostapd
+sed -i 's/#DAEMON_CONF=""/DAEMON_CONF="\/etc\/hostapd\/hostapd.conf"/' /etc/default/hostapd
 
 cat - << EOF > /etc/hostapd/hostapd.conf
 interface=wlan1
@@ -189,6 +188,8 @@ auth_algs=1
 macaddr_acl=0
 EOF
 
+service hostapd restart
+
 
 == DNSMASQ ==
 cat - << EOF > /etc/dnsmasq.conf
@@ -197,10 +198,13 @@ domain=serviette.lan
 dhcp-range=192.168.0.50,192.168.0.150,12h
 EOF
 
-== SharingIsCaring ==
+service dnsmasq restart
 
+
+== SharingIsCaring ==
 useradd -m sharingiscaring
-su sharingiscaring 
+su sharingiscaring -s /bin/bash
+cd ~
 npm install git://github.com/c3d2/sharingiscaring.git
 
 cat - << EOF > /home/sharingiscaring/run.sh
