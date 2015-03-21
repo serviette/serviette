@@ -45,7 +45,7 @@ EOL
     dpkg-reconfigure -f noninteractive tzdata
     
     # Install basic tools
-    aptitude -y install zsh vim less gzip git-core curl python g++ iw wpasupplicant wireless-tools bridge-utils screen tmux mosh ed strace cowsay figlet toilet at pv mmv iputils-tracepath tre-agrep urlscan urlview autossh elinks irssi-scripts ncftp sc byobu mc tree atop iftop iotop nmap antiword moreutils net-tools whois pwgen haveged
+    aptitude -y install zsh vim less gzip git-core curl python g++ iw wpasupplicant wireless-tools bridge-utils screen tmux mosh ed strace cowsay figlet toilet at pv mmv iputils-tracepath tre-agrep urlscan urlview autossh elinks irssi-scripts ncftp sc byobu mc tree atop iftop iotop nmap antiword moreutils net-tools whois pwgen haveged lsusb w3m htop
 }
 
 #################################################
@@ -61,22 +61,27 @@ function configure_network {
 auto lo
 iface lo inet loopback
 
-# Wired LAN
+# LAN - Wired
 auto eth0
 
-# Wifi LAN
-auto wlan0
-iface wlan0 inet manual
+# LAN - Wifi
+auto wlan1
+iface wlan1 inet manual
     wpa-roam /etc/wpa_supplicant/wpa-roam.conf
 
 # Access Point
-auto wlan1
-iface wlan1 inet static
+auto wlan0
+iface wlan0 inet static
     address 192.168.23.1
     netmask 255.255.255.0
 
 # Default connection
 iface default inet dhcp
+EOF
+
+    # Add virtual host
+    cat >> /etc/hosts <<EOF
+192.168.23.1    serviette serviette.lan sic.serviette.lan irc.serviette.lan xmpp.serviette.lan ftp.serviette.lan keyserver.serviette.lan pads.serviette.lan
 EOF
 
     # Make some basic settings at boot time
@@ -91,7 +96,7 @@ echo 1 > /proc/sys/net/ipv4/ip_forward
 
 # Masquerade outgoing traffic from interface eth0 and wlan0
 iptables -t nat -A POSTROUTING -o eth0 -j MASQUERADE
-iptables -t nat -A POSTROUTING -o wlan0 -j MASQUERADE
+iptables -t nat -A POSTROUTING -o wlan1 -j MASQUERADE
 
 # Block outgoing and forwarded communication with other PGP/GPG keyservers
 iptables -A OUTPUT -p TCP --dport 11371 -j REJECT
@@ -101,6 +106,97 @@ iptables -A FORWARD -p TCP --dport 11371 -j REJECT
 
 exit 0
 EOF
+}
+
+#################################################
+# Wireless Access Point
+#################################################
+
+function install_hostapd {
+    # Install HostAPd
+    aptitude -y install hostapd
+    
+    # Create cHostAPd configuration file
+    cat - << EOF > /etc/hostapd/hostapd.conf
+interface=wlan0
+driver=nl80211
+country_code=DE
+ssid=serviette
+hw_mode=g
+channel=6
+wpa=2
+wpa_passphrase=serviette
+wpa_key_mgmt=WPA2-PSK
+wpa_pairwise=TKIP
+rsn_pairwise=CCMP
+auth_algs=1
+macaddr_acl=0
+EOF
+    
+    # Specify configuration file
+    sed -i 's/#DAEMON_CONF=""/DAEMON_CONF="\/etc\/hostapd\/hostapd.conf"/' /etc/default/hostapd
+    
+    # Restart HostAPd to adopt changes
+    service hostapd restart
+}    
+
+#################################################
+# DNS & DHCP Server
+#################################################
+
+function install_dnsmasq {
+    # Install Dnsmasq
+    aptitude -y install dnsmasq
+    
+    # Create Dnsmasq configuration
+    cat - << EOF > /etc/dnsmasq.conf
+interface=wlan0
+domain=serviette.lan
+dhcp-range=192.168.23.50,192.168.23.150,12h
+EOF
+    
+    # Restart Dnsmasq to adopt changes
+    service dnsmasq restart
+}
+
+#################################################
+#  FTP Server
+#################################################
+
+function install_ftpd {
+    aptitude -y install vsftpd
+}
+
+#################################################
+#  HTTP Server
+#################################################
+
+function install_httpd {
+    # Install Nginx, FastCGI Wrapper and PHP5 (CGI)
+    aptitude -y install nginx-light fcgiwrap php5-cgi
+
+    # Make sure that every new users gets his own public_html
+    mkdir /etc/skel/public_html
+
+    # Allow HTTP server user to create new users, required for self-service portal
+    cat > /etc/sudoers <<EOF
+www-data ALL=(root) NOPASSWD: /usr/sbin/useradd"
+EOF
+
+    # Create public default host
+    cat > /etc/nginx/sites-available/serviette.lan <<EOF
+server {
+        server_name serviette.lan
+
+        root /var/www;
+        index index.html index.htm;
+}
+EOF
+
+    ln -s /etc/nginx/sites-available/serviette.lan /etc/nginx/sites-enabled/serviette.lan
+
+    # Restart Nginx to adopt changes 
+    service nginx restart
 }
 
 #################################################
@@ -146,6 +242,8 @@ server{
 EOF
 
     ln -s /etc/nginx/sites-available/pads.serviette.lan /etc/nginx/sites-enabled/pads.serviette.lan
+
+    /etc/init.d/nginx restart
 }
 
 #################################################
@@ -205,27 +303,9 @@ server{
 }
 EOF
 
-    ln -s /etc/nginx/sites-available/keyserver.serviette.lan .
-}
+    ln -s /etc/nginx/sites-available/keyserver.serviette.lan /etc/nginx/sites-enabled/keyserver.serviette.lan
 
-#################################################
-#  HTTP Server
-#################################################
-
-function install_httpd {
-    # Install Nginx, FastCGI Wrapper and PHP5 (CGI)
-    aptitude -y install nginx-light fcgiwrap php5-cgi
-
-    # Make sure that every new users gets his own public_html
-    mkdir /etc/skel/public_html
-
-    # Allow HTTP server user to create new users, required for self-service portal
-    cat > /etc/sudoers <<EOF
-www-data ALL=(root) NOPASSWD: /usr/sbin/useradd"
-EOF
-
-    # Restart Nginx to adopt changes 
-    service nginx restart
+    /etc/init.d/nginx restart
 }
 
 #################################################
@@ -252,57 +332,6 @@ function install_ngircd {
     service ngircd restart
 }
 
-#################################################
-# Wireless Access Point
-#################################################
-
-function install_hostapd {
-    # Install HostAPd
-    aptitude -y install hostapd
-    
-    # Create cHostAPd configuration file
-    cat - << EOF > /etc/hostapd/hostapd.conf
-interface=wlan1
-bridge=br0
-driver=nl80211
-country_code=DE
-ssid=serviette
-hw_mode=g
-channel=6
-wpa=2
-wpa_passphrase=serviette
-wpa_key_mgmt=WPA-PSK
-wpa_pairwise=TKIP
-rsn_pairwise=CCMP
-auth_algs=1
-macaddr_acl=0
-EOF
-    
-    # Specify configuration file
-    sed -i 's/#DAEMON_CONF=""/DAEMON_CONF="\/etc\/hostapd\/hostapd.conf"/' /etc/default/hostapd
-    
-    # Restart HostAPd to adopt changes
-    service hostapd restart
-}    
-
-#################################################
-# DNS & DHCP Server
-#################################################
-
-function install_dnsmasq {
-    # Install Dnsmasq
-    aptitude -y install dnsmasq
-    
-    # Create Dnsmasq configuration
-    cat - << EOF > /etc/dnsmasq.conf
-interface=wlan1
-domain=serviette.lan
-dhcp-range=192.168.0.50,192.168.0.150,12h
-EOF
-    
-    # Restart Dnsmasq to adopt changes
-    service dnsmasq restart
-}
 
 #################################################
 #  SharingIsCaring
@@ -336,17 +365,18 @@ EOF
     service sharingiscaring start
 
     # Create and endable virtual host
-    cat > /etc/nginx/sites-available/sharing.serviette.lan <<EOF
+    cat > /etc/nginx/sites-available/sic.serviette.lan <<EOF
 server{
-  server_name sharing.serviette.lan;
+  server_name sic.serviette.lan;
   location / {
     proxy_pass http://127.0.0.1:8090;
   }
 }
 EOF
 
-    ln -s /etc/nginx/sites-available/sharing.serviette.lan /etc/nginx/sites-enabled/sharing.serviette.lan
+    ln -s /etc/nginx/sites-available/sic.serviette.lan /etc/nginx/sites-enabled/sic.serviette.lan
 
+    /etc/init.d/nginx restart
 }
 
 #################################################
@@ -355,7 +385,7 @@ EOF
 
 function install_email {
     # Install Exim, Dovecot and Mutt
-    aptitude -y install exim4-light dovecot-imapd mutt
+    aptitude -y install exim4-daemon-light dovecot-imapd mutt
     
     # Create Exim configuration the Debian way
     cat - << EOF > /etc/exim4/update-exim4.conf.conf
@@ -383,6 +413,9 @@ EOF
 
 #install_base
 #configure_network
+#install_hostapd
+#install_dnsmasq
+#install_ftpd
 #install_httpd
 #install_etherpad
 #install_sharingiscaring
@@ -390,7 +423,5 @@ EOF
 #install_sks
 #install_prosody
 #install_ngircd
-#install_hostapd
-#install_dnsmasq
 #install_email
 
