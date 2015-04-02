@@ -28,9 +28,8 @@ EOF
     
     # Set up Debian's sources.list
     cat > /etc/apt/sources.list <<EOL
-deb http://ftp.de.debian.org/debian wheezy main contrib non-free
-deb http://ftp.de.debian.org/debian wheezy-updates main contrib non-free
-deb http://ftp.de.debian.org/debian-security wheezy/updates main contrib non-free
+deb http://ftp.debian.org/debian jessie main non-free
+deb https://repositories.collabora.co.uk/debian/ jessie rpi2 
 EOL
     
     # Install latest system updates
@@ -45,7 +44,7 @@ EOL
     dpkg-reconfigure -f noninteractive tzdata
     
     # Install basic tools
-    aptitude -y install zsh vim less gzip git-core curl python g++ iw wpasupplicant wireless-tools bridge-utils screen tmux mosh ed strace cowsay figlet toilet at pv mmv iputils-tracepath tre-agrep urlscan urlview autossh elinks irssi-scripts ncftp sc byobu mc tree atop iftop iotop nmap antiword moreutils net-tools whois pwgen haveged lsusb w3m htop
+    aptitude -y install zsh vim less gzip git-core curl python g++ iw wpasupplicant wireless-tools bridge-utils screen tmux mosh ed strace cowsay figlet toilet at pv mmv iputils-tracepath tre-agrep urlscan urlview autossh elinks irssi-scripts ncftp sc byobu mc tree atop iftop iotop nmap antiword moreutils net-tools whois pwgen haveged usbutils w3m htop
 }
 
 #################################################
@@ -88,17 +87,17 @@ EOF
     sed -i '$ d' /etc/rc.local
 
     cat > /etc/rc.local <<EOF
-# Make the blue LED only flash on activity on SD card
-echo mmc0 > /sys/class/leds/led1/trigger
-
+#!/bin/sh -e
 # Enable IPv4 forwarding
 echo 1 > /proc/sys/net/ipv4/ip_forward
 
-# Masquerade outgoing traffic from interface eth0 and wlan0
+# Masquerade outgoing traffic from interface eth0 and wlan1
 iptables -t nat -A POSTROUTING -o eth0 -j MASQUERADE
 iptables -t nat -A POSTROUTING -o wlan1 -j MASQUERADE
 
 # Block outgoing and forwarded communication with other PGP/GPG keyservers
+# but still enable local communication (nginx reverse proxy)
+iptables -A OUTPUT -o lo -j ACCEPT
 iptables -A OUTPUT -p TCP --dport 11371 -j REJECT
 iptables -A OUTPUT -p UDP --dport 11371 -j REJECT
 iptables -A FORWARD -p UDP --dport 11371 -j REJECT
@@ -126,7 +125,7 @@ hw_mode=g
 channel=6
 wpa=2
 wpa_passphrase=serviette
-wpa_key_mgmt=WPA2-PSK
+wpa_key_mgmt=WPA-PSK
 wpa_pairwise=TKIP
 rsn_pairwise=CCMP
 auth_algs=1
@@ -194,6 +193,9 @@ server {
 EOF
 
     ln -s /etc/nginx/sites-available/serviette.lan /etc/nginx/sites-enabled/serviette.lan
+
+    # The default server_names_hash_bucket_size proved to be too small.
+    sed -i 's/# server_names_hash_bucket_size.*/server_names_hash_bucket_size 64;/' /etc/nginx/nginx.conf
 
     # Restart Nginx to adopt changes 
     service nginx restart
