@@ -88,17 +88,21 @@ EOF
     sed -i '$ d' /etc/rc.local
 
     cat > /etc/rc.local <<EOF
+#!/bin/sh -e
+
 # Make the blue LED only flash on activity on SD card
 echo mmc0 > /sys/class/leds/led1/trigger
 
 # Enable IPv4 forwarding
 echo 1 > /proc/sys/net/ipv4/ip_forward
 
-# Masquerade outgoing traffic from interface eth0 and wlan0
+# Masquerade outgoing traffic from interface eth0 and wlan1
 iptables -t nat -A POSTROUTING -o eth0 -j MASQUERADE
 iptables -t nat -A POSTROUTING -o wlan1 -j MASQUERADE
 
 # Block outgoing and forwarded communication with other PGP/GPG keyservers
+# but still enable local communication (nginx reverse proxy)
+iptables -A OUTPUT -o lo -j ACCEPT
 iptables -A OUTPUT -p TCP --dport 11371 -j REJECT
 iptables -A OUTPUT -p UDP --dport 11371 -j REJECT
 iptables -A FORWARD -p UDP --dport 11371 -j REJECT
@@ -126,7 +130,7 @@ hw_mode=g
 channel=6
 wpa=2
 wpa_passphrase=serviette
-wpa_key_mgmt=WPA2-PSK
+wpa_key_mgmt=WPA-PSK
 wpa_pairwise=TKIP
 rsn_pairwise=CCMP
 auth_algs=1
@@ -173,7 +177,7 @@ function install_ftpd {
 
 function install_httpd {
     # Install Nginx, FastCGI Wrapper and PHP5 (CGI)
-    aptitude -y install nginx-light fcgiwrap php5-cgi
+    aptitude -y install nginx-light fcgiwrap php5-cgi php5-fpm
 
     # Make sure that every new users gets his own public_html
     mkdir /etc/skel/public_html
@@ -190,8 +194,19 @@ server {
 
         root /var/www;
         index index.html index.htm;
+
+        location ~ \.php$ {
+               fastcgi_pass unix:/var/run/php5-fpm.sock;
+               fastcgi_index index.php;
+               include /etc/nginx/fastcgi_params;
+        }        
+
 }
 EOF
+
+    # Increase server_names_hash_bucket_size, due to number of virtual servers
+    sed -i 's/# server_names_hash_bucket_size.*/server_names_hash_bucket_size 64;/' /etc/nginx/nginx.conf
+
 
     ln -s /etc/nginx/sites-available/serviette.lan /etc/nginx/sites-enabled/serviette.lan
 
