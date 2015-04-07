@@ -29,7 +29,7 @@ EOF
     # Set up Debian's sources.list
     cat > /etc/apt/sources.list <<EOL
 deb http://ftp.debian.org/debian jessie main non-free
-deb https://repositories.collabora.co.uk/debian/ jessie rpi2 
+deb https://repositories.collabora.co.uk/debian/ jessie rpi2
 EOL
     
     # Install latest system updates
@@ -44,7 +44,7 @@ EOL
     dpkg-reconfigure -f noninteractive tzdata
     
     # Install basic tools
-    aptitude -y install zsh vim less gzip git-core curl python g++ iw wpasupplicant wireless-tools bridge-utils screen tmux mosh ed strace cowsay figlet toilet at pv mmv iputils-tracepath tre-agrep urlscan urlview autossh elinks irssi-scripts ncftp sc byobu mc tree atop iftop iotop nmap antiword moreutils net-tools whois pwgen haveged usbutils w3m htop
+    aptitude -y install zsh vim less gzip git-core curl python g++ iw wpasupplicant wireless-tools bridge-utils screen tmux mosh ed strace cowsay figlet toilet at pv mmv iputils-tracepath tre-agrep urlscan urlview autossh elinks irssi-scripts ncftp sc byobu mc tree atop iftop iotop nmap antiword moreutils net-tools whois pwgen haveged usbutils w3m htop nethack
 }
 
 #################################################
@@ -80,7 +80,7 @@ EOF
 
     # Add virtual host
     cat >> /etc/hosts <<EOF
-192.168.23.1    serviette serviette.lan sic.serviette.lan irc.serviette.lan xmpp.serviette.lan ftp.serviette.lan keyserver.serviette.lan pads.serviette.lan
+192.168.23.1    serviette serviette.lan bin.serviette.lan sic.serviette.lan irc.serviette.lan xmpp.serviette.lan ftp.serviette.lan keyserver.serviette.lan pads.serviette.lan
 EOF
 
     # Make some basic settings at boot time
@@ -172,7 +172,7 @@ function install_ftpd {
 
 function install_httpd {
     # Install Nginx, FastCGI Wrapper and PHP5 (CGI)
-    aptitude -y install nginx-light fcgiwrap php5-cgi
+    aptitude -y install nginx-light fcgiwrap php5-cgi php5-fpm
 
     # Make sure that every new users gets his own public_html
     mkdir /etc/skel/public_html
@@ -189,8 +189,19 @@ server {
 
         root /var/www;
         index index.html index.htm;
+
+        location ~ \.php$ {
+               fastcgi_pass unix:/var/run/php5-fpm.sock;
+               fastcgi_index index.php;
+               include /etc/nginx/fastcgi_params;
+        }        
+
 }
 EOF
+
+    # Increase server_names_hash_bucket_size, due to number of virtual servers
+    sed -i 's/# server_names_hash_bucket_size.*/server_names_hash_bucket_size 64;/' /etc/nginx/nginx.conf
+
 
     ln -s /etc/nginx/sites-available/serviette.lan /etc/nginx/sites-enabled/serviette.lan
 
@@ -202,14 +213,107 @@ EOF
 }
 
 #################################################
+# NODE.JS
+#################################################
+
+function install_nodejs {
+    # Install NodeJS
+    curl -sL https://deb.nodesource.com/setup | bash -
+    aptitude install -y nodejs
+}
+
+#################################################
+# HASTE-SERVER
+#################################################
+
+function install_haste {
+
+    # Install Etherpad-lite
+    useradd -m haste
+    su haste -c "cd ~ && git clone git://github.com/seejohnrun/haste-server.git"
+    su haste -c "cd ~/haste-server && npm install"
+
+    # Create executable file for haste-server
+    cat - << EOF > /home/haste/run.sh
+#!/bin/bash
+
+cd ~/haste-server
+npm start
+EOF
+
+    chown haste:haste /home/haste/run.sh
+    chmod +x /home/haste/run.sh
+    
+    # Create haste-server config
+    cat - << EOF > /home/haste/haste-server/config.js
+{
+
+  "host": "0.0.0.0",
+  "port": 7777,
+
+  "keyLength": 10,
+
+  "maxLength": 400000,
+
+  "staticMaxAge": 86400,
+
+  "recompressStaticAssets": true,
+
+  "logging": [
+    {
+      "level": "verbose",
+      "type": "Console",
+      "colorize": true
+    }
+  ],
+
+  "keyGenerator": {
+    "type": "phonetic"
+  },
+
+  "storage": {
+    "type": "file",
+    "path": "./data"
+  },
+
+  "documents": {
+    "about": "./about.md"
+  }
+
+}
+EOF
+
+
+    # Install and configure haste-server init script
+    wget https://github.com/serviette/serviette/raw/master/haste-server.init -O /etc/init.d/haste-server
+    chmod +x /etc/init.d/haste-server
+    mkdir /var/log/haste-server
+    chown haste:haste /var/log/haste-server/
+    update-rc.d haste-server defaults
+    
+    # Start Etherpad-lite
+    service haste-server start
+
+    # Create and endable virtual host
+    cat > /etc/nginx/sites-available/bin.serviette.lan <<EOF
+server{
+  server_name bin.serviette.lan;
+  location / {
+    proxy_pass http://127.0.0.1:7777;
+  }
+}
+EOF
+
+    ln -s /etc/nginx/sites-available/bin.serviette.lan /etc/nginx/sites-enabled/bin.serviette.lan
+
+    /etc/init.d/nginx restart
+}
+
+#################################################
 # ETHERPAD-LITE
 #################################################
 
 function install_etherpad {
-    # Install NodeJS
-    curl -sL https://deb.nodesource.com/setup | bash -
-    aptitude install -y nodejs
-
     # Install Etherpad-lite
     useradd -m etherpad
     su etherpad -c "cd ~ && git clone git://github.com/ether/etherpad-lite.git"
@@ -336,6 +440,16 @@ function install_ngircd {
 
 
 #################################################
+# BitlBee 
+#################################################
+
+function install_bitlbee {
+    # Install BitlBee
+    aptitude -y install bitlbee
+
+}
+
+#################################################
 #  SharingIsCaring
 #################################################
 
@@ -413,17 +527,37 @@ EOF
     service exim4 restart
 }
 
+
+#################################################
+# SMTP & IMAP Server/Client
+################################################# 
+
+function install_sipwitch {
+    # Install Sipwitch
+    aptitude -y install Sipwitch
+
+    # Automatically load available plugins
+    sed -i 's/#PLUGINS=.*/PLUGINS="auto"/' /etc/default/sipwitch
+
+    # Start Sipwitch
+    /etc/init.d/sipwitch start
+}
+
+
 #install_base
 #configure_network
 #install_hostapd
 #install_dnsmasq
 #install_ftpd
 #install_httpd
+#install_nodejs
 #install_etherpad
+#install_haste
 #install_sharingiscaring
 #install_ikiwiki
 #install_sks
 #install_prosody
 #install_ngircd
+#install_bitlbee
 #install_email
-
+#install_sipwitch
