@@ -26,11 +26,6 @@ EOF
     
     locale-gen
     
-    # Set up Debian's sources.list
-    cat > /etc/apt/sources.list <<EOL
-deb http://ftp.debian.org/debian jessie main non-free
-deb https://repositories.collabora.co.uk/debian/ jessie rpi2
-EOL
     
     # Install latest system updates
     aptitude update && aptitude -y upgrade
