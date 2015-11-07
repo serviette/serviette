@@ -26,12 +26,6 @@ EOF
     
     locale-gen
     
-    # Set up Debian's sources.list
-    cat > /etc/apt/sources.list <<EOL
-deb http://ftp.de.debian.org/debian wheezy main contrib non-free
-deb http://ftp.de.debian.org/debian wheezy-updates main contrib non-free
-deb http://ftp.de.debian.org/debian-security wheezy/updates main contrib non-free
-EOL
     
     # Install latest system updates
     aptitude update && aptitude -y upgrade
@@ -45,7 +39,7 @@ EOL
     dpkg-reconfigure -f noninteractive tzdata
     
     # Install basic tools
-    aptitude -y install zsh vim less gzip git-core curl python g++ iw wpasupplicant wireless-tools bridge-utils screen tmux mosh ed strace cowsay figlet toilet at pv mmv iputils-tracepath tre-agrep urlscan urlview autossh elinks irssi-scripts ncftp sc byobu mc tree atop iftop iotop nmap antiword moreutils net-tools whois pwgen haveged lsusb w3m htop nethack
+    aptitude -y install zsh vim less gzip git-core curl python g++ iw wpasupplicant wireless-tools bridge-utils screen tmux mosh ed strace cowsay figlet toilet at pv mmv iputils-tracepath tre-agrep urlscan urlview autossh elinks irssi-scripts ncftp sc byobu mc tree atop iftop iotop nmap antiword moreutils net-tools whois pwgen haveged usbutils w3m htop nethack-console
 }
 
 #################################################
@@ -53,8 +47,8 @@ EOL
 #################################################
 
 function configure_network {
-    # Firmware for rt2800usb (USB WiFi) 
-    aptitude install firmware-ralink
+    # The correct firmware should be installed and a wlan0 interface present as
+    # a minimal requirement
 
     cat > /etc/network/interfaces <<EOF
 # interfaces(5) file used by ifup(8) and ifdown (8)                                                                                                                                  
@@ -63,6 +57,7 @@ iface lo inet loopback
 
 # LAN - Wired
 auto eth0
+iface eth0 inet dhcp
 
 # LAN - Wifi
 auto wlan1
@@ -89,10 +84,6 @@ EOF
 
     cat > /etc/rc.local <<EOF
 #!/bin/sh -e
-
-# Make the blue LED only flash on activity on SD card
-echo mmc0 > /sys/class/leds/led1/trigger
-
 # Enable IPv4 forwarding
 echo 1 > /proc/sys/net/ipv4/ip_forward
 
@@ -111,6 +102,9 @@ iptables -A FORWARD -p TCP --dport 11371 -j REJECT
 exit 0
 EOF
 }
+
+# Run the rc.local to put firewall rules in place
+/etc/rc.local
 
 #################################################
 # Wireless Access Point
@@ -190,7 +184,7 @@ EOF
     # Create public default host
     cat > /etc/nginx/sites-available/serviette.lan <<EOF
 server {
-        server_name serviette.lan
+        server_name serviette.lan;
 
         root /var/www;
         index index.html index.htm;
@@ -209,6 +203,9 @@ EOF
 
 
     ln -s /etc/nginx/sites-available/serviette.lan /etc/nginx/sites-enabled/serviette.lan
+
+    # The default server_names_hash_bucket_size proved to be too small.
+    sed -i 's/# server_names_hash_bucket_size.*/server_names_hash_bucket_size 64;/' /etc/nginx/nginx.conf
 
     # Restart Nginx to adopt changes 
     service nginx restart
@@ -536,7 +533,7 @@ EOF
 
 function install_sipwitch {
     # Install Sipwitch
-    aptitude -y install Sipwitch
+    aptitude -y install sipwitch
 
     # Automatically load available plugins
     sed -i 's/#PLUGINS=.*/PLUGINS="auto"/' /etc/default/sipwitch
