@@ -52,7 +52,7 @@ stop() {
 }
 
 status() {
-  status_of_proc -p /var/run/$NAME.pid "" "etherpad-lite" && exit 0 || exit $?
+  status_of_proc -p /var/run/$NAME.pid "" "haste-server" && exit 0 || exit $?
 }
 
 case "$1" in
